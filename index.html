@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#0c1017" />
   <meta name="description" content="En enkel och stilren arbetstidslogg med timlön, arbetspass och löneöversikt." />
   <title>Timmar — din arbetstid</title>
+  <!-- Version 1.3: lösenordsinloggning till befintligt Supabase-konto -->
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -55,10 +56,7 @@
   }
   function read(){try{const d=JSON.parse(localStorage.getItem(STORE));if(d&&Array.isArray(d.jobs)&&Array.isArray(d.entries))return {...d,active:'home'}}catch(e){}return initialData()}
   let state=read(), config=(()=>{try{return JSON.parse(localStorage.getItem(CONFIG))||{}}catch(e){return {}}})();
-  let modalType=null, modalEditId=null, modalMessage='', colorSelected=colors[0], cloud=null, cloudUser=null, cloudError='', cloudBusy=false, drawerOpen=false;
-  // Bevara bara e-postadressen mellan appstarter. Engångskoden sparas aldrig.
-  const OTP_EMAIL_STORE='timmar-otp-email-v1';
-  let pendingEmail=(()=>{try{return localStorage.getItem(OTP_EMAIL_STORE)||''}catch(e){return ''}})();
+  let modalType=null, modalEditId=null, modalMessage='', colorSelected=colors[0], cloud=null, cloudUser=null, cloudError='', cloudNotice='', cloudBusy=false, drawerOpen=false;
   const persist=()=>localStorage.setItem(STORE,JSON.stringify(state));
   const jobs=()=>state.jobs;
   const jobFor=id=>jobs().find(j=>j.id===id);
@@ -105,9 +103,12 @@
       shell('Inställningar','Lokal lagring och valfri Supabase-synkning.',`<div class="settings-section"><h3>Lagring</h3><p>Appen fungerar direkt och sparar dina uppgifter i den här webbläsaren. För synkning mellan mobil och dator kan du ansluta ditt eget Supabase-projekt. Kör först SQL-filen <strong>supabase.sql</strong> i Supabase SQL Editor och publicera sidan på GitHub Pages.</p></div><hr class="separator"><form id="cloud-form"><div class="settings-section"><h3>Supabase-projekt</h3>${field('Project URL','cloudUrl',config.url||'','url','placeholder="https://xxxxxxxx.supabase.co"')}${field('Publishable key / anon key','cloudKey',config.key||'','text','placeholder="sb_publishable_... eller eyJ..." autocomplete="off"')}<button class="secondary-btn" type="submit">${ico('cloud',16)} Spara anslutning</button></div></form><div id="cloud-area">${cloudUI()}</div><hr class="separator"><div class="settings-section"><h3>Exempeldata</h3><p>${state.demo?'Du använder exempeljobb och exempeltider.':'Du kan fylla appen med exempeljobb och pass för att testa designen.'}</p><button class="outline-btn" data-action="${state.demo?'clear-demo':'load-demo'}">${state.demo?'Rensa exempeldata':'Visa exempeldata'}</button></div><hr class="separator"><div class="settings-section"><h3>Säkerhetskopia</h3><p>Spara en kopia av alla jobb och arbetspass. Du kan också läsa in en tidigare export när du byter enhet eller webbadress. Återställning ersätter befintliga lokala uppgifter; synka till molnet efteråt.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="outline-btn" data-action="export">${ico('arrow',16)} Exportera data</button><button class="secondary-btn" data-action="import">Återställ säkerhetskopia</button></div><input type="file" id="backup-file" accept=".json,application/json" style="display:none" /></div>`,true);
     }
   }
-  function cloudUI(){if(!config.url||!config.key)return `<p class="field-hint">Fyll i dina Supabase-uppgifter och spara för att aktivera inloggning.</p>`;
-    if(cloudUser)return `<div class="success">${ico('check',15)} Inloggad: ${h(cloudUser.email||cloudUser.id)}</div>${cloudError?`<div class="error">${h(cloudError)}</div>`:''}<p class="field-hint" style="margin:15px 0">Tryck ”Ladda från molnet” för att hämta sparade uppgifter, eller ”Ladda upp till molnet” för att synka allt du ser här. Exempeldata kan inte laddas upp.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 17px"><button class="secondary-btn" data-action="cloud-pull">Ladda från molnet</button><button class="primary-btn" data-action="cloud-push" ${state.demo?'disabled':''}>Ladda upp till molnet</button><button class="outline-btn" data-action="cloud-logout">Logga ut</button></div>`;
-    return `${cloudError?`<div class="error">${h(cloudError)}</div>`:''}<div class="settings-section"><h3>Logga in för synkning</h3><p>Få en engångskod till din e-post och skriv in koden här i appen. Du behöver använda samma e-post på alla dina enheter. Det fungerar också när Timmar är installerad på iPhone.</p><form id="email-form">${field('E-postadress','cloudEmail',pendingEmail,'email','required placeholder="namn@exempel.se" autocomplete="email"')}<button class="primary-btn" type="submit" ${cloudBusy?'disabled':''}>${ico('cloud',15)} Skicka inloggningskod</button></form>${pendingEmail?`<div class="settings-section" style="margin-top:22px"><h3>Ange koden från mejlet</h3><p>Vi har begärt en kod till <strong>${h(pendingEmail)}</strong>. Öppna mejlet, kopiera siffrorna och återvänd hit utan att klicka på en länk.</p><form id="otp-form"><div class="field"><label for="field-cloudOtp">Engångskod</label><input id="field-cloudOtp" name="cloudOtp" type="text" inputmode="numeric" pattern="[0-9]{6,8}" minlength="6" maxlength="8" autocomplete="one-time-code" placeholder="123456" required></div><button class="primary-btn" type="submit" ${cloudBusy?'disabled':''}>${ico('check',15)} Verifiera och logga in</button></form></div>`:''}<p class="field-hint" style="margin-top:16px">Engångskoden behöver finnas i Supabase-mejlet. Under Authentication → Email Templates → Magic Link/OTP ska mejlmallen innehålla <code style="color:#cdd5ff">${'{{ .Token }}'}</code>. Ändra bara den mallen om dina mejl ännu enbart innehåller en länk.</p></div>`}
+  function cloudUI(){
+    if(!config.url||!config.key)return `<p class="field-hint">Fyll i dina Supabase-uppgifter och spara för att aktivera inloggning.</p>`;
+    const messages=`${cloudError?`<div class="error" role="alert">${h(cloudError)}</div>`:''}${cloudNotice?`<div class="success" role="status">${h(cloudNotice)}</div>`:''}`;
+    if(cloudUser)return `<div class="success">${ico('check',15)} Inloggad: ${h(cloudUser.email||cloudUser.id)}</div>${messages}<p class="field-hint" style="margin:15px 0">Tryck ”Ladda från molnet” för att hämta sparade uppgifter, eller ”Ladda upp till molnet” för att synka allt du ser här. Exempeldata kan inte laddas upp.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 17px"><button class="secondary-btn" data-action="cloud-pull">Ladda från molnet</button><button class="primary-btn" data-action="cloud-push" ${state.demo?'disabled':''}>Ladda upp till molnet</button><button class="outline-btn" data-action="cloud-logout">Logga ut</button></div><hr class="separator"><div class="settings-section"><h3>Skapa eller byt lösenord</h3><p>Ställ in ett lösenord för ditt <strong>befintliga konto</strong>. Då kan du logga in direkt i Timmar-appen på iPhone utan en mejllänk. Dina tidigare sparade arbetspass och jobb påverkas inte.</p><form id="set-password-form"><div class="field"><label for="field-newPassword">Nytt lösenord (minst 12 tecken)</label><input id="field-newPassword" name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="256" required></div><div class="field"><label for="field-confirmPassword">Bekräfta lösenord</label><input id="field-confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="12" required></div><button class="primary-btn" type="submit" ${cloudBusy?'disabled':''}>${ico('check',15)} Spara lösenord</button></form><p class="field-hint" style="margin-top:10px">Använd ett unikt lösenord. Spara det i din lösenordshanterare och dela det inte med någon. Du kan behöva logga in på nytt om Supabase kräver extra verifiering.</p></div>`;
+    return `${messages}<div class="settings-section"><h3>Logga in med lösenord</h3><p>Logga in på <strong>samma Supabase-konto</strong> som på din Mac, så kommer du åt samma uppgifter. Ställ först in ett lösenord på en enhet där du redan är inloggad.</p><form id="password-login-form">${field('E-postadress','loginEmail','','email','required placeholder="namn@exempel.se" autocomplete="email"')}<div class="field"><label for="field-loginPassword">Lösenord</label><input id="field-loginPassword" name="loginPassword" type="password" autocomplete="current-password" required></div><button class="primary-btn" type="submit" ${cloudBusy?'disabled':''}>${ico('check',15)} Logga in</button></form></div><hr class="separator"><div class="settings-section"><h3>Har du inget lösenord än?</h3><p>Om du är utloggad på alla enheter kan du fortfarande använda Supabases vanliga mejllänk. Öppna länken <strong>i samma webbläsare</strong> där du fyllde i Supabase-uppgifterna. På iPhone är det enklast att göra detta i Safari före installation på hemskärmen.</p><form id="email-form">${field('E-postadress','cloudEmail','','email','required placeholder="namn@exempel.se" autocomplete="email"')}<button class="outline-btn" type="submit" ${cloudBusy?'disabled':''}>Skicka mejllänk</button></form><p class="field-hint" style="margin-top:10px">Supabases mejltjänst har en begränsning för antal inloggningsmejl. Du behöver inte ändra den låsta Magic Link / OTP-mallen.</p></div>`;
+  }
   function updateLive(){const form=document.getElementById('entry-form');if(!form)return;const f=new FormData(form),job=jobFor(f.get('jobId')),e={start:f.get('start'),end:f.get('end'),breakMinutes:Number(f.get('breakMinutes')),hourlyRate:(modalType==='edit-entry'&&state.entries.find(x=>x.id===modalEditId)?.jobId===f.get('jobId'))?state.entries.find(x=>x.id===modalEditId)?.hourlyRate:job?.rate};const mins=elapsed(e);const good=f.get('start')!==f.get('end')&&mins>0;document.getElementById('live-hours').textContent=good?`${number(mins/60)} timmar (efter rast)`:'Kontrollera tiderna';document.getElementById('live-earnings').textContent=good?money(cost(e)):'– kr'}
   function validateEntry(x){if(!jobs().some(j=>j.id===x.jobId))return 'Välj ett jobb.';if(!/^\d{4}-\d{2}-\d{2}$/.test(x.date)||!/^\d\d:\d\d$/.test(x.start)||!/^\d\d:\d\d$/.test(x.end))return 'Fyll i datum och tider.';if(x.start===x.end)return 'Start- och sluttid kan inte vara samma.';if(!Number.isInteger(x.breakMinutes)||x.breakMinutes<0||x.breakMinutes>=1440)return 'Rasten måste vara mellan 0 och 1439 minuter.';if(elapsed(x)<=0)return 'Rasten kan inte vara lika lång som eller längre än arbetspasset.';return ''}
   async function saveJob(form){const editing=modalType==='edit-job';const f=new FormData(form),name=String(f.get('jobName')||'').trim(),rate=Number(f.get('jobRate'));if(!name||!Number.isFinite(rate)||rate<=0||rate>100000){modalMessage='Fyll i ett jobbnamn och en giltig timlön över 0 kr.';renderModal();return}let j;if(modalType==='edit-job'){j=jobFor(modalEditId);Object.assign(j,{name,rate,color:colorSelected})}else{j={id:uid(),name,rate,color:colorSelected,createdAt:new Date().toISOString()};state.jobs.push(j);state.active=j.id}persist();closeModal();render();toast(editing?'Jobbet uppdaterat':'Jobbet har lagts till');await cloudUpsertJob(j)}
@@ -164,9 +165,49 @@
   document.addEventListener('submit',async e=>{
     if(e.target.id==='job-form'){e.preventDefault();await saveJob(e.target)}
     if(e.target.id==='entry-form'){e.preventDefault();await saveEntry(e.target)}
-    if(e.target.id==='cloud-form'){e.preventDefault();const f=new FormData(e.target),url=String(f.get('cloudUrl')||'').trim().replace(/\/$/,''),key=String(f.get('cloudKey')||'').trim();if(!/^https:\/\/[\w.-]+\.supabase\.co$/.test(url)||!key){cloudError='Ange Supabase Project URL och en giltig publishable/anon key.';renderModal();return}config={url,key};localStorage.setItem(CONFIG,JSON.stringify(config));cloudError='';cloud=null;cloudUser=null;renderModal();await initCloud();toast('Supabase-inställningarna sparade')}
-    if(e.target.id==='email-form'){e.preventDefault();if(!cloud){cloudError='Anslutningen är inte klar. Kontrollera projektuppgifterna.';renderModal();return}const email=String(new FormData(e.target).get('cloudEmail')||'').trim();try{cloudBusy=true;const {error}=await cloud.auth.signInWithOtp({email,options:{emailRedirectTo:location.protocol==='file:'?undefined:location.origin+location.pathname}});if(error)throw error;pendingEmail=email;localStorage.setItem(OTP_EMAIL_STORE,email);cloudError='';renderModal();document.getElementById('cloud-area')?.insertAdjacentHTML('afterbegin',`<div class="success">Inloggningsmejl begärt till ${h(email)}. Skriv in koden här när mejlet kommer. Om mejlet bara innehåller en länk behöver du först ändra Magic Link-mejlmallen i Supabase.</div>`)}catch(err){cloudError=err.message||'Det gick inte att skicka mejlet';renderModal()}finally{cloudBusy=false}}
-    if(e.target.id==='otp-form'){e.preventDefault();if(!cloud){cloudError='Supabase-anslutningen är inte klar.';renderModal();return}const token=String(new FormData(e.target).get('cloudOtp')||'').replace(/\s/g,'');if(!/^\d{6,8}$/.test(token)){cloudError='Ange alla siffror i engångskoden.';renderModal();return}try{cloudBusy=true;const {data,error}=await cloud.auth.verifyOtp({email:pendingEmail,token,type:'email'});if(error)throw error;if(!data?.session?.user)throw new Error('Ingen inloggad session returnerades.');cloudUser=data.session.user;pendingEmail='';localStorage.removeItem(OTP_EMAIL_STORE);cloudError='';render();if(modalType==='settings')renderModal();toast('Inloggad i Supabase')}catch(err){cloudError='Kunde inte verifiera koden: '+(err.message||'försök igen med den senaste koden');renderModal()}finally{cloudBusy=false}}
+    if(e.target.id==='cloud-form'){e.preventDefault();const f=new FormData(e.target),url=String(f.get('cloudUrl')||'').trim().replace(/\/$/,''),key=String(f.get('cloudKey')||'').trim();if(!/^https:\/\/[\w.-]+\.supabase\.co$/.test(url)||!key){cloudError='Ange Supabase Project URL och en giltig publishable/anon key.';renderModal();return}config={url,key};localStorage.setItem(CONFIG,JSON.stringify(config));cloudError='';cloudNotice='';cloud=null;cloudUser=null;renderModal();await initCloud();toast('Supabase-inställningarna sparade')}
+    if(e.target.id==='set-password-form'){
+      e.preventDefault();
+      if(!cloudReady()){cloudError='Du måste vara inloggad för att skapa ett lösenord.';cloudNotice='';renderModal();return}
+      const f=new FormData(e.target),password=String(f.get('newPassword')||''),confirmPassword=String(f.get('confirmPassword')||'');
+      if(password.length<12||password!==confirmPassword){cloudError=password.length<12?'Använd minst 12 tecken i lösenordet.':'Lösenorden stämmer inte överens.';cloudNotice='';renderModal();return}
+      try{
+        cloudBusy=true;
+        const {error}=await cloud.auth.updateUser({password});
+        if(error)throw error;
+        cloudError='';cloudNotice='Lösenordet har sparats för ditt befintliga konto. Du kan nu logga in med samma e-post och lösenord på iPhone.';
+        renderModal();
+      }catch(err){cloudNotice='';cloudError='Lösenordet kunde inte sparas: '+(err.message||'okänt fel')+'. Om Supabase kräver ny verifiering, logga in på nytt via mejllänken i Mac-webbläsaren.';renderModal()}
+      finally{cloudBusy=false}
+    }
+    if(e.target.id==='password-login-form'){
+      e.preventDefault();
+      if(!cloud){cloudError='Anslut Supabase-projektet först.';cloudNotice='';renderModal();return}
+      const f=new FormData(e.target),email=String(f.get('loginEmail')||'').trim(),password=String(f.get('loginPassword')||'');
+      if(!email||!password){cloudError='Fyll i både e-post och lösenord.';cloudNotice='';renderModal();return}
+      try{
+        cloudBusy=true;
+        const {data,error}=await cloud.auth.signInWithPassword({email,password});
+        if(error)throw error;
+        if(!data?.user)throw new Error('Ingen inloggad användare returnerades');
+        cloudUser=data.user;cloudError='';cloudNotice='Du är inloggad med lösenord.';
+        render();if(modalType==='settings')renderModal();toast('Inloggad i Supabase');
+      }catch(err){cloudNotice='';cloudError='Inloggningen misslyckades: '+(err.message||'kontrollera e-post och lösenord');renderModal()}
+      finally{cloudBusy=false}
+    }
+    if(e.target.id==='email-form'){
+      e.preventDefault();
+      if(!cloud){cloudError='Anslutningen är inte klar. Kontrollera projektuppgifterna.';cloudNotice='';renderModal();return}
+      const email=String(new FormData(e.target).get('cloudEmail')||'').trim();
+      try{
+        cloudBusy=true;
+        const {error}=await cloud.auth.signInWithOtp({email,options:{shouldCreateUser:false,emailRedirectTo:location.protocol==='file:'?undefined:location.origin+location.pathname}});
+        if(error)throw error;
+        cloudError='';cloudNotice='En inloggningslänk har begärts till '+email+'. Öppna den i samma webbläsare där Timmar och Supabase-inställningarna finns.';
+        renderModal();
+      }catch(err){cloudNotice='';cloudError=err.message||'Det gick inte att skicka mejlet';renderModal()}
+      finally{cloudBusy=false}
+    }
   });
   document.addEventListener('change',async e=>{if(e.target?.id==='backup-file'){const file=e.target.files?.[0];await importData(file);}});
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&modalType)closeModal()});
